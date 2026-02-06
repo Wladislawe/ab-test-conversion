@@ -149,7 +149,7 @@
 
 ## Как воспроизвести
 ### 1. Добавьте репозиторий
-git clone https://github.com/your-username/rfm-customer-segmentation
+git clone https://github.com/Wladislawe/ab-test-conversion
 
 ### 2. Установите пакеты R
 install.packages(c("tidyverse", "shiny", "ggplot2", "scales"))
