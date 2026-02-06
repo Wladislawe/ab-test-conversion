@@ -10,7 +10,7 @@ Conducted an A/B test to compare the conversion rates of the old and new version
 
 **Objective:** to understand whether the new version of the landing page increases conversion (registrations/purchases) compared to the current one
 
-**Hypothesis (H1):** the new page leads to **higher** conversions than the old one.  
+**Hypothesis (H1):** the new page leads to **higher** conversions than the old one
 **Null hypothesis (H0):** conversions for both versions **do not differ**
 
 **Success criterion:** statistically significant increase in conversion for the treatment group at a significance level of 5%
@@ -25,18 +25,18 @@ Conducted an A/B test to compare the conversion rates of the old and new version
   - `timestamp` — page view time;
   - `group` — experimental group (`control` / `treatment`);
   - `landing_page` — actual page (`old_page` / `new_page`);
-  - `converted` — conversion (1 — yes, 0 — no).
+  - `converted` — conversion (1 — yes, 0 — no)
 
 ---
 
 ## Methods
 
 1. **Data cleaning**
-   - Rows with missing values in key fields (`group`, `landing_page`, `converted`) were removed.
+   - Rows with missing values in key fields (`group`, `landing_page`, `converted`) were removed
    - Only correct pairs were left:
      - `control → old_page`,
-     - `treatment → new_page`.
-   - For users with multiple The first appearance is recorded.
+     - `treatment → new_page`
+   - For users with multiple The first appearance is recorded
 
 2. **Statistical test**
    - Z-test of differences in proportions
@@ -70,9 +70,9 @@ From the calculations:
 
 - \(z = -1.31\)
 - \(p = 0.19\)
-- The difference in conversions (treatment − control) is close to zero, with a 95% confidence interval that includes 0.
+- The difference in conversions (treatment − control) is close to zero, with a 95% confidence interval that includes 0
 
-**Interpretation:** at a 5% significance level, there is **no statistically significant evidence** that the new version of the landing page converts better or worse than the current one.
+**Interpretation:** at a 5% significance level, there is **no statistically significant evidence** that the new version of the landing page converts better or worse than the current one
 
 ---
 
@@ -95,9 +95,9 @@ From the calculations:
 
 - If the goal of the experiment is **specifically to increase conversion**, it is rational to:
   - **keep the control version** as the main one;
-  - consider the hypothesis ‘the new design increases conversion’ **rejected**.
+  - consider the hypothesis ‘the new design increases conversion’ **rejected**
 - If the new page is important for other reasons (brand, visual consistency, product requirements), you can:
-  - switch to the new version **with the understanding** that there is no conversion gain at this time.
+  - switch to the new version **with the understanding** that there is no conversion gain at this time
 
 ### 2. How to improve further experiments
 
@@ -117,8 +117,8 @@ Before launching the next A/B test, evaluate
    To study additionally:
    - new vs returning users;
    - mobile vs desktop devices;
-   - traffic sources.  
-   Sometimes the overall effect is ‘0’, but in certain segments the new page performs better/worse.
+   - traffic sources  
+   Sometimes the overall effect is ‘0’, but in certain segments the new page performs better/worse
 
 ---
 
@@ -149,7 +149,7 @@ Before launching the next A/B test, evaluate
 
 ## How to reproduce
 ### 1. Clone repository
-Git clone https://github.com/your-username/rfm-customer-segmentation
+Git clone https://github.com/Wladislawe/ab-test-conversion
 
 ### 2. Install dependencies
 install.packages(c("tidyverse", "shiny", "ggplot2", "scales"))
