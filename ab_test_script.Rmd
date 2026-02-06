@@ -1,0 +1,258 @@
+---
+title: "ab_test_script"
+output: html_document
+---
+#SECTION 1. EXPLORATORY ANALYSIS 
+##1. Loading data and libraries
+```{r, warning=FALSE, message = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readr)
+library(shiny)
+library(scales)
+```
+
+```{r, warning=FALSE}
+df <- read_csv("data/ab_data.csv")
+head(df) #first 6 lines
+glimpse(df)  #see the dataframe structure 
+
+df <- df %>% #assign proper variable types
+  mutate(
+    group = as.factor(group),
+    landing_page = as.factor(landing_page),
+    converted = as.integer(converted),
+    timestamp = ymd_hms(timestamp))
+
+str(df) #all changes applied
+```
+
+##2. Any NAs? / Пропуски в данных
+```{r}
+colSums(is.na(df))
+df %>%
+  summarise(across(everything(), ~sum(is.na(.)) / n() * 100)) %>%
+  pivot_longer(everything(), names_to = "Column", values_to = "Percent_Missing") %>%
+  arrange(desc(Percent_Missing))
+#ideal dataframe, no cleaning needed
+```
+
+##3. Check data consistency for A/B tests
+For A/B tests, control and treatment groups should strictly correspond to old (A) and new (B) features. We need to clean the rows where observations are confused to ensure the relevance of experiment
+```{r}
+table(df$group, df$landing_page) #there are confused observations, let's filter them
+
+df <- df %>%
+  filter(
+    !(group == "control"   & landing_page != "old_page"),
+    !(group == "treatment" & landing_page != "new_page"))
+
+cat("Rows after dropping inconsistent rows:", nrow(df), "\n\n")
+```
+
+##4. Delete duplicates by user ID
+A user should belong to one group only
+```{r}
+dup_users <- df %>%
+  count(user_id) %>%
+  filter(n > 1)
+cat("Users with multiple rows:", nrow(dup_users), "\n") #only 1 user is duplicated, let's erase them
+
+if (nrow(dup_users) > 0) {
+  df <- df %>%
+    filter(!user_id %in% dup_users$user_id)
+  cat("Rows after removing duplicated users:", nrow(df), "\n\n")}
+```
+
+##5. Checking the date range / Проверяем диапазон по датам
+```{r}
+df %>%
+  summarise(
+    Min_Date = min(timestamp, na.rm = TRUE),
+    Max_Date = max(timestamp, na.rm = TRUE))
+#data covers range from Jan 2 to Jan 24, i.e. the experiment lasted 3 weeks
+```
+
+#SECTION 2. A/B TEST
+##1. Conversion rates by group
+```{r}
+conversion_summary <- df %>%
+  group_by(group) %>%
+  summarise(
+    users = n(),
+    conversions = sum(converted),
+    conversion_rate = conversions/users, .groups = "drop")
+
+cat("Conversion summary by group \n")
+print(conversion_summary) #the data says that convertion decreased with the new page design
+```
+
+##2. Z test for difference in proportions
+```{r}
+n_control    <- conversion_summary$users[conversion_summary$group == "control"]
+conv_control   <- conversion_summary$conversions[conversion_summary$group == "control"]
+p_control   <- conv_control / n_control
+
+n_treatment  <- conversion_summary$users[conversion_summary$group == "treatment"]
+conv_treatment <- conversion_summary$conversions[conversion_summary$group == "treatment"]
+p_treatment <- conv_treatment / n_treatment
+
+cat("Control conversion:", round(p_control, 4), "\n")
+cat("Treatment conversion:", round(p_treatment, 4), "\n\n")
+```
+
+```{r}
+p_pooled <- (conv_control + conv_treatment) / (n_control + n_treatment) #pooled proportion
+se <- sqrt(p_pooled * (1 - p_pooled) * (1 / n_control + 1 / n_treatment)) #SE estimation
+z_stat <- (p_treatment - p_control)/ se #Z statistics 
+
+p_value <- 2 * (1 - pnorm(abs(z_stat))) #p-value
+cat("Z-statistic:", round(z_stat, 3), "\n") #Z-statistic: -1.31 
+cat("p-value:", signif(p_value, 3), "\n\n") #p-value: 0.19 
+```
+Z and P values say that the difference is insignificant. Let's check confidence intervals
+```{r}
+diff <- p_treatment - p_control #difference
+ci_low  <- diff - 1.96 * se
+ci_high <- diff + 1.96 * se
+
+ab_test_results <- tibble(
+  n_control, conv_control, p_control,
+  n_treatment, conv_treatment, p_treatment,
+  z_stat, p_value, diff, ci_low, ci_high)
+ab_test_results
+```
+
+#SECTION 3. VISUALISATION
+Although statistical values suggest there is no significant effect observed, proper visualisation may invite more insights
+##1. Conversion by groups with CI
+```{r}
+
+conversion_summary <- conversion_summary %>%
+  mutate(
+    se = sqrt(conversion_rate * (1 - conversion_rate) / users),
+    ci_low  = conversion_rate - 1.96 * se,
+    ci_high = conversion_rate + 1.96 * se) #CI (95%) and SE for each group conversion 
+
+p_conv <- ggplot(conversion_summary, 
+  aes(x = group, y = conversion_rate, fill = group)) +
+  geom_col(width = 0.6, show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  labs(title = "Conversion rate by group", subtitle = "With 95% confidence intervals", x = "", y = "Conversion rate") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p_conv
+```
+
+
+##2. Conversion by days
+```{r}
+daily_conv <- df %>%
+  mutate(date = as.Date(timestamp)) %>%
+  group_by(date, group) %>%
+  summarise(
+    users = n(),
+    conversions = sum(converted),
+    conversion_rate = conversions / users,
+    .groups = "drop")
+
+p_daily <- ggplot(daily_conv,
+  aes(x = date, y = conversion_rate, colour = group)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 1.5) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  geom_smooth(
+      se = FALSE,        # не рисовать доверительный интервал
+      method = "loess",  # локальная регрессия (гладкая кривая)
+      span = 0.3,        # степень сглаживания (0.2–0.4 обычно норм)
+      linewidth = 0.7,
+      linetype = "dashed",
+      alpha = 0.8) +
+  labs(title = "Daily conversion rate over test period", x = "Date", y = "Conversion rate", colour = "Group") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+p_daily
+```
+
+##3. Dashboard
+```{r}
+ui <- fluidPage(
+  titlePanel("A/B Test: Landing Page Conversion"),
+  sidebarLayout(
+    sidebarPanel(
+      h4("Summary"),
+      verbatimTextOutput("summary_text"),
+      br(),
+      h4("Test results"),
+      verbatimTextOutput("test_text")
+      ),
+    mainPanel(
+      tabsetPanel(
+        tabPanel("Conversion by group",
+                 plotOutput("conv_plot", height = "400px")),
+        tabPanel("Daily trend",
+                 plotOutput("daily_plot", height = "400px"))
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  output$summary_text <- renderPrint({
+    conversion_summary %>%
+      mutate(conversion_rate = percent(conversion_rate, accuracy = 0.01)) %>%
+      select(group, users, conversions, conversion_rate)
+  })
+  output$test_text <- renderPrint({
+    res <- ab_test_results[1, ]
+    cat(
+      "Control conversion:  ", percent(res$p_control,  accuracy = 0.01), "\n",
+      "Treatment conversion:", percent(res$p_treatment, accuracy = 0.01), "\n\n",
+      "Difference (T - C):  ", percent(res$diff, accuracy = 0.01),
+      "  (95% CI: [",
+      percent(res$ci_low,  accuracy = 0.01), ", ",
+      percent(res$ci_high, accuracy = 0.01), "])\n\n",
+      "Z-statistic:", round(res$z_stat, 3), "\n",
+      "p-value:    ", signif(res$p_value, 3), "\n"
+    )
+  })
+  output$conv_plot <- renderPlot({
+    df <- conversion_summary %>%
+      mutate(
+        se     = sqrt(conversion_rate * (1 - conversion_rate) / users),
+        ci_low = conversion_rate - 1.96 * se,
+        ci_high= conversion_rate + 1.96 * se
+      )
+    ggplot(df, aes(x = group, y = conversion_rate, fill = group)) +
+      geom_col(width = 0.6, show.legend = FALSE) +
+      scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+      labs(x = "", y = "Conversion rate") +
+      theme_minimal(base_size = 13)
+  })
+
+  output$daily_plot <- renderPlot({p_daily
+    })
+}
+shinyApp(ui, server)
+```
+
+Alas, the graphs don't report any significant trend in regards to time
+
+## Key Findings
+### 1. The new version does not increase conversion
+- The average conversion rate for the control and treatment groups is practically the same (the difference is within the margin of statistical error)
+- The 95% confidence intervals for the conversion rates of the groups overlap significantly
+- The Z-test of the difference in proportions gives a p-value > 0.05 →  no statistically significant effect
+
+**Business Impact:**
+- There is no reason to expect an increase in revenue/registrations when switching to the new page
+- The risk of metric degradation is also not confirmed
+
+### 2. No effect over time
+- Daily conversions for both groups fluctuate around the overall level
+- The control and treatment lines often intersect, with no consistent lead for the new version
+- The smoothed trends are almost identical throughout the test period
+
+**Business Impact:**
+- There are no signs that the new page is starting to win/lose over time
+- The test can be considered complete, as the accumulated data is sufficient to confirm the absence of a noticeable effect
